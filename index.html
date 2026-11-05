@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MERK eiendomsoppslag</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root { --rod:#ea4f3d; --svart:#121212; --gra:#f8f8f8; --linje:#e3e3e3; --dempet:#666; --ok:#2e7d32; --obs:#c77700; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Poppins, system-ui, sans-serif; color:var(--svart); background:var(--gra); font-size:14px; }
+  header { background:var(--svart); color:#fff; padding:12px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header h1 span { color:var(--rod); }
+  .sok { position:relative; flex:1; min-width:260px; max-width:560px; }
+  .sok input { width:100%; padding:10px 12px; border:0; border-radius:4px; font:inherit; font-size:15px; }
+  .forslag { position:absolute; top:100%; left:0; right:0; background:#fff; color:var(--svart); border-radius:0 0 4px 4px; box-shadow:0 6px 18px rgba(0,0,0,.2); z-index:2000; max-height:320px; overflow:auto; }
+  .forslag div { padding:8px 12px; cursor:pointer; border-top:1px solid var(--linje); }
+  .forslag div:hover, .forslag div.valgt { background:#fdecea; }
+  .forslag small { color:var(--dempet); }
+  header .hint { font-size:12px; color:#bbb; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 440px; height:calc(100vh - 62px); }
+  #kart { height:100%; }
+  #rapport { overflow:auto; padding:16px; border-left:1px solid var(--linje); background:#fff; }
+  .tom { color:var(--dempet); line-height:1.6; }
+  .kort { border:1px solid var(--linje); border-radius:6px; margin-bottom:12px; background:#fff; }
+  .kort h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; margin:0; padding:9px 12px; border-bottom:1px solid var(--linje); background:var(--gra); display:flex; justify-content:space-between; }
+  .kort h2 small { text-transform:none; letter-spacing:0; font-weight:400; color:var(--dempet); }
+  .kort .innhold { padding:8px 12px; }
+  .rad { display:grid; grid-template-columns:150px 1fr; gap:8px; padding:5px 0; border-bottom:1px dashed var(--linje); }
+  .rad:last-child { border-bottom:0; }
+  .rad .n { color:var(--dempet); }
+  .merke { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:500; }
+  .merke.ok { background:#e8f5e9; color:var(--ok); }
+  .merke.obs { background:#fff3e0; color:var(--obs); }
+  .merke.fare { background:#fdecea; color:#b3261e; }
+  .merke.ukjent { background:#eee; color:#555; }
+  .laster { color:var(--dempet); font-style:italic; }
+  .kilde { font-size:11px; color:var(--dempet); padding:0 12px 8px; }
+  a { color:var(--rod); }
+  .lenker a { display:block; padding:3px 0; }
+  .knapper { display:flex; gap:8px; margin-bottom:12px; }
+  button { font:inherit; border:1px solid var(--svart); background:#fff; padding:6px 12px; border-radius:4px; cursor:pointer; }
+  button:hover { background:var(--svart); color:#fff; }
+  .forbehold { font-size:11px; color:var(--dempet); line-height:1.5; margin-top:16px; }
+  .tomtefilter { background:#fff; padding:8px 10px; border-radius:6px; box-shadow:0 1px 6px rgba(0,0,0,.25); font-size:12px; max-width:230px; }
+  .tomtefilter b { display:block; margin-bottom:4px; }
+  .tomtefilter label { display:flex; align-items:center; gap:6px; padding:2px 0; cursor:pointer; }
+  .tomtefilter .prikk { width:10px; height:10px; border-radius:50%; flex:none; }
+  .tomtefilter select { font:inherit; margin-top:4px; width:100%; }
+  .tomtefilter .antall { color:var(--dempet); margin-left:auto; }
+  @media (max-width: 900px) {
+    main { grid-template-columns:1fr; grid-template-rows: 45vh auto; height:auto; }
+    #rapport { border-left:0; }
+  }
+  @media print {
+    header .sok, header .hint, #kart, .knapper { display:none; }
+    main { display:block; height:auto; }
+    #rapport { overflow:visible; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>MERK</span> eiendomsoppslag og fradelingstomter · Møre og Romsdal</h1>
+  <div class="sok">
+    <input id="sokefelt" type="search" placeholder="Søk adresse, f.eks. Keiser Wilhelms gate 22 Ålesund" autocomplete="off" autofocus>
+    <div id="forslag" class="forslag" hidden></div>
+  </div>
+  <div class="hint">… eller klikk i kartet</div>
+</header>
+<main>
+  <div id="kart"></div>
+  <section id="rapport">
+    <p class="tom">Søk opp en adresse i Møre og Romsdal, eller klikk et sted i kartet.<br>
+    Siden henter da eiendom, terreng, naturfare (NVE), grunnforhold og radon (NGU), støy (Statens vegvesen),
+    kulturminner (Riksantikvaren) og planer som er varslet (DiBK). Alt hentes direkte fra åpne offentlige kilder.</p>
+    <p class="tom">De fargede punktene er store boligtomter i gamle Ålesund og Vestnes som kan være aktuelle for fradeling.
+    Klikk et punkt for å slå opp tomta. Velg planstatus og minste areal i boksen nede til venstre i kartet.</p>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="fradelingstomter.js"></script>
+<script>
+// ---------- Kart ----------
+const kart = L.map('kart').setView([62.6, 7.0], 8);
+const topo = L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
+  { maxZoom: 20, maxNativeZoom: 18, attribution: '© Kartverket' }).addTo(kart);
+const flyfoto = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxZoom: 20, maxNativeZoom: 19, attribution: 'Flyfoto © Esri World Imagery' });
+
+const wms = (url, layers, navn) => L.tileLayer.wms(url, { layers, format: 'image/png', transparent: true, opacity: 0.6, attribution: navn });
+const kartlag = {
+  'Reguleringsplaner (DiBK)': wms('https://nap.ft.dibk.no/services/wms/reguleringsplaner/', 'vertikalniva_2', 'DiBK, Nasjonal arealplanbase'),
+  'Kommuneplan og kommunedelplan (DiBK)': wms('https://nap.ft.dibk.no/services/wms/kommuneplaner/', 'kommuneplan,kommunedelplan', 'DiBK, Nasjonal arealplanbase'),
+  'Flom aktsomhet (NVE)': wms('https://kart.nve.no/enterprise/services/Flomaktsomhet/MapServer/WMSServer', 'Flom_aktsomhetsomrade', 'NVE'),
+  'Kvikkleire faresoner (NVE)': wms('https://kart.nve.no/enterprise/services/SkredKvikkleire2/MapServer/WMSServer', 'KvikkleireFaregrad', 'NVE'),
+  'Snø- og steinskred aktsomhet (NVE)': wms('https://kart.nve.no/enterprise/services/SkredSnoSteinAkt/MapServer/WMSServer', 'Aktsomhetsomrade', 'NVE'),
+  'Jord- og flomskred aktsomhet (NVE)': wms('https://kart.nve.no/enterprise/services/JordFlomskredAktsomhet/MapServer/WMSServer', 'Jord_flomskred_aktsomhetsomrader', 'NVE'),
+  'Radon aktsomhet (NGU)': wms('https://geo.ngu.no/mapserver/RadonWMS2', 'Radon_aktsomhet', 'NGU'),
+  'Løsmasser (NGU)': wms('https://geo.ngu.no/mapserver/LosmasserWMS2', 'Losmasse_flate', 'NGU'),
+  'Kulturminner (Riksantikvaren)': wms('https://kart.ra.no/wms/kulturminner2', 'Kulturminner', 'Riksantikvaren'),
+  'Støy veg (Statens vegvesen)': wms('https://www.vegvesen.no/kart/ogc/norstoy_1_0/ows', 'Stoyvarselkart', 'Statens vegvesen'),
+};
+// ---------- Fradelingstomter ----------
+const TOMTEKAT = {
+  reg: { n: 'Regulert bolig', farge: '#2f7d55', på: true },
+  kpa: { n: 'Bolig i kommuneplan', farge: '#2f64a8', på: true },
+  ureg: { n: 'Uregulert / uavklart', farge: '#7b5aa6', på: true },
+  lnf: { n: 'LNF', farge: '#c07a12', på: false },
+  delvis: { n: 'Delvis annet formål', farge: '#9a5b5b', på: false },
+};
+const tomter = typeof FRADELING !== 'undefined' ? FRADELING : [];
+const tomteLag = L.layerGroup().addTo(kart);
+let minAreal = 0;
+tomter.forEach(t => {
+  t.punkt = L.circleMarker([t.lat, t.lon], { radius: 6, weight: 1.5, color: '#fff', fillColor: TOMTEKAT[t.cat].farge, fillOpacity: 0.9 })
+    .bindTooltip(`${t.adr} · ${t.areal.toLocaleString('no-NO')} m²`)
+    .on('click', e => { L.DomEvent.stopPropagation(e); kart.setView([t.lat, t.lon], Math.max(kart.getZoom(), 17)); slaOpp(t.lat, t.lon, null); });
+});
+function visTomter() {
+  tomteLag.clearLayers();
+  const antall = {};
+  tomter.forEach(t => {
+    if (t.areal < minAreal) return;
+    antall[t.cat] = (antall[t.cat] || 0) + 1;
+    if (TOMTEKAT[t.cat].på) tomteLag.addLayer(t.punkt);
+  });
+  Object.keys(TOMTEKAT).forEach(k => { const el = document.getElementById('ta-' + k); if (el) el.textContent = antall[k] || 0; });
+}
+const tomteFilter = L.control({ position: 'bottomleft' });
+tomteFilter.onAdd = () => {
+  const div = L.DomUtil.create('div', 'tomtefilter');
+  div.innerHTML = `<b>Fradelingstomter (Ålesund og Vestnes)</b>` +
+    Object.entries(TOMTEKAT).map(([k, c]) => `<label><input type="checkbox" data-kat="${k}" ${c.på ? 'checked' : ''}>
+      <span class="prikk" style="background:${c.farge}"></span>${c.n}<span class="antall" id="ta-${k}"></span></label>`).join('') +
+    `<select id="minareal"><option value="0">Alle arealer</option><option value="2000">Over 2 000 m²</option>
+      <option value="3000">Over 3 000 m²</option><option value="5000">Over 5 000 m²</option></select>`;
+  L.DomEvent.disableClickPropagation(div);
+  L.DomEvent.disableScrollPropagation(div);
+  div.querySelectorAll('[data-kat]').forEach(cb => cb.onchange = () => { TOMTEKAT[cb.dataset.kat].på = cb.checked; visTomter(); });
+  div.querySelector('#minareal').onchange = e => { minAreal = +e.target.value; visTomter(); };
+  return div;
+};
+if (tomter.length) { tomteFilter.addTo(kart); visTomter(); }
+
+L.control.layers({ 'Kart': topo, 'Flyfoto': flyfoto }, Object.assign(tomter.length ? { 'Fradelingstomter': tomteLag } : {}, kartlag), { collapsed: true }).addTo(kart);
+L.control.scale({ imperial: false }).addTo(kart);
+
+let markor = null, teigLag = L.layerGroup().addTo(kart);
+kart.on('click', e => slaOpp(e.latlng.lat, e.latlng.lng, null));
+
+// ---------- Hjelpere ----------
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+async function hentJson(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+async function hentTekst(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.text();
+}
+const merke = (tekst, type) => `<span class="merke ${type}">${esc(tekst)}</span>`;
+const rad = (navn, verdi) => `<div class="rad"><div class="n">${esc(navn)}</div><div>${verdi}</div></div>`;
+const ja = v => v && v !== 'Null' && v !== ' ';
+
+function kort(id, tittel, kilde) {
+  return `<div class="kort" id="${id}"><h2>${esc(tittel)}</h2><div class="innhold"><span class="laster">Henter …</span></div>
+    <div class="kilde">Kilde: ${kilde}</div></div>`;
+}
+function fyll(id, html) { const el = document.querySelector('#' + id + ' .innhold'); if (el) el.innerHTML = html; }
+function feil(id, e) { fyll(id, merke('Fikk ikke svar fra kilden', 'ukjent') + ` <small>(${esc(e.message)})</small>`); }
+
+// Areal (ca.) av polygon i lengde/bredde, via lokal flat projeksjon
+function arealCa(ringer) {
+  const R = 6371008.8, rad = Math.PI / 180;
+  let sum = 0;
+  ringer.forEach((ring, i) => {
+    const lat0 = ring[0][1] * rad, k = Math.cos(lat0);
+    let a = 0;
+    for (let j = 0; j < ring.length - 1; j++) {
+      const [x1, y1] = [ring[j][0] * rad * R * k, ring[j][1] * rad * R];
+      const [x2, y2] = [ring[j + 1][0] * rad * R * k, ring[j + 1][1] * rad * R];
+      a += x1 * y2 - x2 * y1;
+    }
+    sum += (i === 0 ? 1 : -1) * Math.abs(a / 2);
+  });
+  return sum;
+}
+
+// WMS GetFeatureInfo rundt et punkt (ca. 1 m per piksel)
+function gfiUrl(base, lag, lat, lon, format, halvBredde = 50) {
+  const dLat = halvBredde / 111320, dLon = halvBredde / (111320 * Math.cos(lat * Math.PI / 180));
+  const p = new URLSearchParams({ service: 'WMS', version: '1.3.0', request: 'GetFeatureInfo', layers: lag, query_layers: lag, styles: '',
+    crs: 'EPSG:4326', bbox: [lat - dLat, lon - dLon, lat + dLat, lon + dLon].join(','), width: 101, height: 101, i: 50, j: 50,
+    info_format: format, feature_count: 10 });
+  return base + '?' + p;
+}
+// MapServer text/plain: «Feature n:» etterfulgt av «  navn = 'verdi'»
+function lesMapserverTekst(t) {
+  const objekter = [];
+  let cur = null;
+  t.split('\n').forEach(l => {
+    if (/^\s*Feature \d+:/.test(l)) { cur = {}; objekter.push(cur); return; }
+    const m = l.match(/^\s*([^=]+?)\s*=\s*'(.*)'\s*$/);
+    if (m && cur) cur[m[1]] = m[2];
+  });
+  return objekter;
+}
+// NVE ArcGIS identify
+function nveUrl(tjeneste, lat, lon) {
+  const p = new URLSearchParams({ geometry: `${lon},${lat}`, geometryType: 'esriGeometryPoint', sr: 4326, layers: 'all', tolerance: 1,
+    mapExtent: `${lon - .002},${lat - .001},${lon + .002},${lat + .001}`, imageDisplay: '400,400,96', returnGeometry: false, f: 'json' });
+  return `https://kart.nve.no/enterprise/rest/services/${tjeneste}/MapServer/identify?${p}`;
+}
+
+// ---------- Adressesøk ----------
+let sokTimer = null, treff = [], valgt = -1;
+$('#sokefelt').addEventListener('input', e => {
+  clearTimeout(sokTimer);
+  const q = e.target.value.trim();
+  if (q.length < 3) { $('#forslag').hidden = true; return; }
+  sokTimer = setTimeout(() => sok(q), 250);
+});
+$('#sokefelt').addEventListener('keydown', e => {
+  const liste = $('#forslag');
+  if (liste.hidden || !treff.length) return;
+  if (e.key === 'ArrowDown') { valgt = Math.min(valgt + 1, treff.length - 1); visForslag(); e.preventDefault(); }
+  if (e.key === 'ArrowUp') { valgt = Math.max(valgt - 1, 0); visForslag(); e.preventDefault(); }
+  if (e.key === 'Enter') { velg(treff[Math.max(valgt, 0)]); e.preventDefault(); }
+  if (e.key === 'Escape') liste.hidden = true;
+});
+document.addEventListener('click', e => { if (!e.target.closest('.sok')) $('#forslag').hidden = true; });
+
+async function sok(q) {
+  try {
+    const p = new URLSearchParams({ sok: q, fuzzy: true, treffPerSide: 50, utkoordsys: 4258 });
+    const d = await hentJson('https://ws.geonorge.no/adresser/v1/sok?' + p);
+    // Bare Møre og Romsdal (kommunenummer 15xx)
+    treff = d.adresser.filter(a => a.kommunenummer.startsWith('15')).slice(0, 10);
+    valgt = -1;
+    visForslag();
+  } catch (e) { treff = []; visForslag(); }
+}
+function visForslag() {
+  const liste = $('#forslag');
+  liste.innerHTML = treff.length ? treff.map((a, i) =>
+    `<div data-i="${i}" class="${i === valgt ? 'valgt' : ''}">${esc(a.adressetekst)}<br><small>${esc(a.postnummer)} ${esc(a.poststed)} · ${esc(a.kommunenavn)} · ${a.gardsnummer}/${a.bruksnummer}</small></div>`).join('')
+    : '<div><small>Ingen treff i Møre og Romsdal</small></div>';
+  liste.hidden = false;
+  liste.querySelectorAll('[data-i]').forEach(el => el.onclick = () => velg(treff[+el.dataset.i]));
+}
+function velg(a) {
+  $('#forslag').hidden = true;
+  $('#sokefelt').value = `${a.adressetekst}, ${a.poststed}`;
+  slaOpp(a.representasjonspunkt.lat, a.representasjonspunkt.lon, a);
+}
+
+// ---------- Oppslag ----------
+async function slaOpp(lat, lon, adresse) {
+  if (markor) markor.remove();
+  markor = L.marker([lat, lon]).addTo(kart);
+  teigLag.clearLayers();
+  if (adresse) kart.setView([lat, lon], 18);
+
+  const tittel = adresse ? `${adresse.adressetekst}, ${adresse.postnummer} ${adresse.poststed}` : `Punkt ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  $('#rapport').innerHTML = `
+    <h2 style="margin:0 0 4px;font-size:18px">${esc(tittel)}</h2>
+    <div style="color:var(--dempet);margin-bottom:12px">Hentet ${new Date().toLocaleString('no-NO')}</div>
+    <div class="knapper"><button onclick="window.print()">Skriv ut / lagre PDF</button></div>
+    <div id="k-fradeling"></div>
+    ${kort('k-eiendom', 'Eiendom', 'Kartverket (matrikkelen via Geonorge), høydedata DTM1')}
+    ${kort('k-arealplan', 'Arealplaner', 'DiBK, Nasjonal arealplanbase (kopi av kommunenes planregister)')}
+    ${kort('k-nve', 'Naturfare', 'NVE (aktsomhetskart og faresoner)')}
+    ${kort('k-grunn', 'Grunnforhold og radon', 'NGU')}
+    ${kort('k-stoy', 'Støy fra veg', 'Statens vegvesen (støyvarselkart)')}
+    ${kort('k-kultur', 'Kulturminner', 'Riksantikvaren (Askeladden)')}
+    ${kort('k-plan', 'Planer under arbeid', 'DiBK (planlegging igangsatt)')}
+    ${kort('k-lenker', 'Mer informasjon', 'lenker til offentlige innsynsløsninger')}
+    <p class="forbehold">Tallene er hentet automatisk fra åpne kilder og kan være utdaterte eller unøyaktige.
+    Areal er regnet ut fra eiendomsgrensen i kartet og er ca. Bruk alltid kommunens planinnsyn og
+    grunnboken før beslutninger. Eiere og tidligere salg er ikke med, fordi grunnboken ikke er åpen uten avtale.</p>`;
+
+  const oppg = [hentEiendom(lat, lon, adresse), hentArealplaner(lat, lon), hentNve(lat, lon), hentGrunn(lat, lon), hentStoy(lat, lon), hentKultur(lat, lon), hentPlan(lat, lon)];
+  await Promise.allSettled(oppg);
+}
+
+async function hentEiendom(lat, lon, adresse) {
+  try {
+    const [kommune, eiendom, hoyde] = await Promise.all([
+      hentJson(`https://ws.geonorge.no/kommuneinfo/v1/punkt?nord=${lat}&ost=${lon}&koordsys=4258`),
+      hentJson(`https://ws.geonorge.no/eiendom/v1/punkt?nord=${lat}&ost=${lon}&koordsys=4258&radius=1&treffPerSide=5`),
+      hentJson(`https://ws.geonorge.no/hoydedata/v1/punkt?koordsys=4258&nord=${lat}&ost=${lon}`).catch(() => null),
+    ]);
+    let html = rad('Kommune', `${esc(kommune.kommunenavn)} (${esc(kommune.kommunenummer)})`);
+    if (kommune.fylkesnummer !== '15') html += rad('Merk', merke('Utenfor Møre og Romsdal', 'obs'));
+    const e = (eiendom.eiendom || [])[0];
+    if (!e) {
+      html += rad('Eiendom', merke('Fant ingen eiendom i punktet', 'ukjent'));
+    } else {
+      const mnr = `${e.gardsnummer}/${e.bruksnummer}` + (e.festenummer ? `/${e.festenummer}` : '') + (e.seksjonsnummer ? `/${e.seksjonsnummer}` : '');
+      html += rad('Gnr/bnr', `<b>${esc(mnr)}</b>` + (e.festenummer ? ' (feste)' : '') + (e.seksjonsnummer ? ' (seksjon)' : ''));
+      html += rad('Nøyaktighet grense', esc(e.nøyaktighetsklasseteig || 'ukjent'));
+      if (e.teigmedflerematrikkelenheter) html += rad('Merk', merke('Teigen har flere matrikkelenheter', 'obs'));
+      if (e.uregistrertjordsameie) html += rad('Merk', merke('Uregistrert jordsameie', 'obs'));
+      // Eiendomsgrense og areal
+      try {
+        const p = new URLSearchParams({ kommunenummer: e.kommunenummer, gardsnummer: e.gardsnummer, bruksnummer: e.bruksnummer,
+          festenummer: e.festenummer, omrade: true, utkoordsys: 4258 });
+        if (e.seksjonsnummer) p.set('seksjonsnummer', e.seksjonsnummer);
+        const g = await hentJson('https://ws.geonorge.no/eiendom/v1/geokoding?' + p);
+        let areal = 0, teiger = 0;
+        g.features.filter(f => f.geometry && f.geometry.type === 'Polygon').forEach(f => {
+          teiger++;
+          areal += arealCa(f.geometry.coordinates);
+          L.geoJSON(f, { style: { color: '#ea4f3d', weight: 3, fillOpacity: 0.08 } }).addTo(teigLag);
+        });
+        if (teiger) {
+          html += rad('Tomteareal', `ca. ${Math.round(areal).toLocaleString('no-NO')} m²` + (teiger > 1 ? ` (${teiger} teiger)` : ''));
+          if (!adresse) kart.fitBounds(L.featureGroup(teigLag.getLayers()).getBounds(), { maxZoom: 19, padding: [30, 30] });
+        }
+      } catch (_) { /* grense er ikke kritisk */ }
+      html += rad('Seeiendom', `<a target="_blank" rel="noopener" href="https://seeiendom.kartverket.no/eiendom/${e.kommunenummer}/${e.gardsnummer}/${e.bruksnummer}/${e.festenummer}/${e.seksjonsnummer}">Åpne hos Kartverket</a>`);
+      lagLenker(lat, lon, e);
+      visFradeling(tomter.find(t => t.knr === e.kommunenummer && t.gnr === e.gardsnummer && t.bnr === e.bruksnummer && !e.festenummer && !e.seksjonsnummer));
+    }
+    if (adresse) html += rad('Adresse', `${esc(adresse.adressetekst)}, ${esc(adresse.postnummer)} ${esc(adresse.poststed)}` +
+      (adresse.bruksenhetsnummer?.length ? `<br><small>${adresse.bruksenhetsnummer.length} bruksenheter: ${esc(adresse.bruksenhetsnummer.join(', '))}</small>` : ''));
+    const z = hoyde?.punkter?.[0]?.z;
+    if (z != null) html += rad('Terrenghøyde', `ca. ${z.toFixed(1).replace('.', ',')} moh. (NN2000)`);
+    html += rad('Koordinater', `${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+    fyll('k-eiendom', html);
+    if (!e) lagLenker(lat, lon, null);
+  } catch (err) { feil('k-eiendom', err); lagLenker(lat, lon, null); }
+}
+
+// ---------- Arealplaner (DiBK) ----------
+// HTML-svaret gir kodene med navn, f.eks. «1110 (Boligbebyggelse)». Hvert objekt er en <h3> fulgt av en tabell.
+function lesPlanHtml(tekst) {
+  const doc = new DOMParser().parseFromString(tekst, 'text/html');
+  return [...doc.querySelectorAll('h3')].map(h => {
+    const obj = { type: h.textContent.trim(), felt: {}, lenke: '' };
+    const tabell = h.nextElementSibling;
+    tabell?.querySelectorAll('tr').forEach(tr => {
+      const n = tr.querySelector('th')?.textContent.trim(), td = tr.querySelector('td');
+      if (!n || !td) return;
+      const v = td.textContent.replace(/\s+/g, ' ').trim();
+      if (v) obj.felt[n] = v;
+      const a = td.querySelector('a[href]');
+      if (a && !obj.lenke) obj.lenke = a.getAttribute('href');
+    });
+    if (!obj.lenke && /^https?:/.test(obj.felt.link || '')) obj.lenke = obj.felt.link;
+    return obj;
+  });
+}
+async function planInfo(tjeneste, lag, lat, lon) {
+  const url = gfiUrl(`https://nap.ft.dibk.no/services/wms/${tjeneste}/`, lag, lat, lon, 'text/html', 15).replace('feature_count=10', 'feature_count=30');
+  return lesPlanHtml(await hentTekst(url));
+}
+const utenKode = v => (v || '').replace(/^\S+\s+\((.*)\)$/, '$1');
+const dato = v => (v || '').slice(0, 10);
+function beskrivPlan(p) {
+  const f = p.felt;
+  const navn = f.plannavn || utenKode(f.plantype) || 'Plan uten navn';
+  const id = f.planidentifikasjon ? ` <small>(planID ${esc(f.planidentifikasjon)})</small>` : '';
+  const status = f.planstatus && !/^3\b/.test(f.planstatus) ? ` ${merke(utenKode(f.planstatus), 'obs')}` : '';
+  const vedtatt = f.ikrafttredelsesdato ? `vedtatt ${esc(dato(f.ikrafttredelsesdato))}` : '';
+  const type = f.plantype ? esc(utenKode(f.plantype)) : '';
+  const lenke = p.lenke ? ` · <a target="_blank" rel="noopener" href="${esc(p.lenke)}">Plandokumenter</a>` : '';
+  return `<b>${esc(navn)}</b>${id}${status}<br><small>${[type, vedtatt].filter(Boolean).join(' · ')}</small>${lenke}`;
+}
+function beskrivFormal(o) {
+  const f = o.felt;
+  const formal = f.arealformål || f.reguleringsformål || '';
+  return esc(utenKode(formal) || o.type) + (f.feltbetegnelse ? ` <small>(felt ${esc(f.feltbetegnelse)})</small>` : '') +
+    (f.beskrivelse ? `<br><small>${esc(f.beskrivelse)}</small>` : '') +
+    (f.utnytting || f['utnyttingstall'] ? `<br><small>Utnytting: ${esc(f.utnytting || f['utnyttingstall'])}</small>` : '') +
+    (f.arealbruksstatus && !/Nåværende/.test(f.arealbruksstatus) ? ` ${merke(utenKode(f.arealbruksstatus), 'obs')}` : '');
+}
+const erOmrade = o => /Omr(å|a)de$/.test(o.type) && !/Formål|Arealformål|Hensyn|Bestemmelse/.test(o.type);
+const erFormal = o => /Formål|Arealformål/.test(o.type);
+const erHensyn = o => /Hensyn|Bestemmelse/.test(o.type);
+async function hentArealplaner(lat, lon) {
+  try {
+    const [rp, bp, kp] = await Promise.all([
+      planInfo('reguleringsplaner', 'rpomrade_vn2,arealformal_vn2,hensynssoner_vn2,bestemmelsesomrader_vn2', lat, lon),
+      planInfo('reguleringsplaner', 'bebyggelseomrade_vn2,bebyggelse_arealformal_vn2', lat, lon).catch(() => []),
+      planInfo('kommuneplaner', 'kpomrade,arealformal_kp,hensynssone-bestemmelsesomrade_kp,kdpomrade,arealformal_kdp,hensynssone-bestemmelsesomrade_kdp', lat, lon),
+    ]);
+    const regulering = [...rp, ...bp];
+    let html = '';
+    // Reguleringsplan
+    const rpPlaner = regulering.filter(erOmrade), rpFormal = regulering.filter(erFormal), rpHensyn = regulering.filter(erHensyn);
+    if (rpPlaner.length) {
+      html += rad('Reguleringsplan', rpPlaner.map(beskrivPlan).join('<br>'));
+      if (rpFormal.length) html += rad('Formål', rpFormal.map(beskrivFormal).join('<br>'));
+      if (rpHensyn.length) html += rad('Hensyn/bestemmelse', rpHensyn.map(o => esc(utenKode(o.felt.hensynSonenavn || o.felt.hensynskategori || o.felt.bestemmelseOmrådeNavn || o.felt.formål || o.type))).join('<br>'));
+    } else {
+      html += rad('Reguleringsplan', merke('Ikke regulert', 'obs') + '<br><small>Kommuneplanen gjelder.</small>');
+    }
+    // Kommuneplan og kommunedelplan
+    const kpPlaner = kp.filter(erOmrade), kpFormal = kp.filter(erFormal), kpHensyn = kp.filter(erHensyn);
+    html += rad('Kommuneplan', kpPlaner.length ? kpPlaner.map(beskrivPlan).join('<br>') : merke('Ingen treff', 'ukjent'));
+    if (kpFormal.length) html += rad('Formål i kommuneplan', kpFormal.map(beskrivFormal).join('<br>'));
+    if (kpHensyn.length) html += rad('Hensynssoner', kpHensyn.map(o => esc(utenKode(o.felt.hensynSonenavn || o.felt.hensynskategori || o.felt.angittHensyn || o.type)) +
+      (o.felt.beskrivelse ? ` <small>${esc(o.felt.beskrivelse)}</small>` : '')).join('<br>'));
+    fyll('k-arealplan', html + `<div style="margin-top:6px"><small>Planene er en kopi hos DiBK og kan være noen uker gamle. Les alltid plandokumentene.</small></div>`);
+  } catch (e) { feil('k-arealplan', e); }
+}
+
+// Kort øverst i rapporten når eiendommen står på listen over fradelingstomter
+function visFradeling(t) {
+  const el = document.getElementById('k-fradeling');
+  if (!el || !t) return;
+  const kat = TOMTEKAT[t.cat];
+  const planLenke = t.planid ? (t.knr === '1508'
+    ? `https://plandialog.isy.no/detailsplan/1508/${encodeURIComponent(t.planid)}/True/False`
+    : `https://www.arealplaner.no/vestnes1535/gi?funksjon=VisPlan&kommunenummer=1535&planidentifikasjon=${encodeURIComponent(t.planid)}`) : '';
+  const merknad = { reg: 'Regulert bolig er sikrest.', kpa: 'Bolig i kommuneplanen kan ha plankrav.',
+    ureg: 'Må sjekkes mot kommuneplanen.', lnf: 'LNF krever dispensasjon.', delvis: 'Deler av tomta har annet formål.' }[t.cat];
+  el.innerHTML = `<div class="kort" style="border-color:${kat.farge}">
+    <h2 style="background:${kat.farge};color:#fff">Fradelingstomt <small style="color:#fff">${esc(kat.n)}</small></h2>
+    <div class="innhold">
+      ${rad('Tomteareal', `<b>${t.areal.toLocaleString('no-NO')} m²</b> <small>(ca. ${Math.floor(t.areal / 600)} × 600 m²)</small>`)}
+      ${rad('Bolig i dag', esc(t.hus))}
+      ${t.plan ? rad('Plan', esc(t.plan) + (t.pdato ? ` (${esc(t.pdato.slice(0, 4))})` : '') + (planLenke ? ` · <a target="_blank" rel="noopener" href="${planLenke}">Plandokumenter</a>` : '')) : ''}
+      ${t.form ? rad('Formål', esc(t.form)) : ''}
+      ${t.kpa ? rad('Kommuneplan', esc(t.kpa)) : ''}
+      ${rad('Vurdering', `<small>${esc(merknad)}</small>`)}
+    </div>
+    <div class="kilde">Kilde: MERKs fradelingskart for Ålesund og Vestnes (2026-10-31)</div></div>`;
+}
+
+// Hvert tema: tjeneste, hvilke lag som betyr «innenfor», og hvordan treffet beskrives
+const NVE_TEMA = [
+  { navn: 'Flom (aktsomhet)', tj: 'Flomaktsomhet', lag: ['Flom_aktsomhetsomrade'], dekning: 'FlomAktsomhet_Dekning' },
+  { navn: 'Flomsone (faresone)', tj: 'Flomsoner2', fare: true },
+  { navn: 'Kvikkleire (aktsomhet)', tj: 'KvikkleireskredAktsomhet', lag: null, ikkeLag: /Dekning/i },
+  { navn: 'Kvikkleire (faresone)', tj: 'SkredKvikkleire2', lag: ['KvikkleireFaregrad'], beskriv: a => a.faregrad && a.faregrad !== 'Ingen' ? `Faregrad: ${a.faregrad} · ${a.skrdOmrNvn}` : null, inneMenUtenFare: a => a.faregrad === 'Ingen' },
+  { navn: 'Snø- og steinskred (aktsomhet)', tj: 'SkredSnoSteinAkt', lag: ['Aktsomhetsomrade'] },
+  { navn: 'Steinsprang (aktsomhet)', tj: 'SkredSteinAktR', raster: true },
+  { navn: 'Snøskred (aktsomhet)', tj: 'SnoskredAktsomhet', raster: true },
+  { navn: 'Jord- og flomskred (aktsomhet)', tj: 'JordFlomskredAktsomhet', raster: true },
+  { navn: 'Skredfaresone', tj: 'Skredfaresoner1', fare: true },
+];
+async function hentNve(lat, lon) {
+  const svar = await Promise.all(NVE_TEMA.map(t => hentJson(nveUrl(t.tj, lat, lon)).then(d => d.results || []).catch(() => null)));
+  let html = '';
+  NVE_TEMA.forEach((t, i) => {
+    const r = svar[i];
+    if (r === null) { html += rad(t.navn, merke('Ingen svar', 'ukjent')); return; }
+    let inne;
+    if (t.raster) inne = r.filter(x => { const v = x.attributes['Pixel Value'] ?? x.attributes['UniqueValue.Pixel Value']; return v !== undefined && v !== 'NoData'; });
+    else if (t.fare) inne = r;
+    else if (t.lag) inne = r.filter(x => t.lag.includes(x.layerName));
+    else inne = r.filter(x => !t.ikkeLag.test(x.layerName));
+    if (t.inneMenUtenFare && inne.length && inne.every(x => t.inneMenUtenFare(x.attributes))) {
+      html += rad(t.navn, merke('Utredet – ingen fare', 'ok')); return;
+    }
+    if (inne.length) {
+      const tekst = t.beskriv ? t.beskriv(inne[0].attributes) : (t.fare ? inne.map(x => x.layerName).join(', ') : null);
+      html += rad(t.navn, merke(t.fare ? 'I faresone' : 'Innenfor aktsomhetsområde', t.fare ? 'fare' : 'obs') + (tekst ? `<br><small>${esc(tekst)}</small>` : ''));
+    } else {
+      const dek = t.dekning ? r.find(x => x.layerName === t.dekning) : null;
+      html += rad(t.navn, merke('Ikke registrert', 'ok') + (dek ? `<br><small>${esc(dek.attributes.dekning)}</small>` : ''));
+    }
+  });
+  fyll('k-nve', html + `<div style="margin-top:6px"><small>Aktsomhetsområde betyr at fare må utredes nærmere før bygging (TEK17 § 7). Det betyr ikke at det er fare.</small></div>`);
+}
+
+// NGU OGC API Features: objektet som dekker punktet
+async function nguFlate(api, samling, lat, lon) {
+  const d = 0.0005;
+  const g = await hentJson(`https://geo.ngu.no/api/features/${api}/collections/${samling}/items?f=json&limit=50&bbox=${lon - d},${lat - d},${lon + d},${lat + d}`);
+  return (g.features || []).find(f => f.geometry && punktIPolygon([lon, lat], f.geometry))?.properties || null;
+}
+async function hentGrunn(lat, lon) {
+  try {
+    const [radon, losLokal, losRegional, marin] = await Promise.all([
+      nguFlate('radonaktsomhet', 'radonaktsomhet', lat, lon).catch(() => undefined),
+      nguFlate('losmasselokalt', 'losmasseflate', lat, lon).catch(() => undefined),
+      nguFlate('losmasseregionalt', 'losmasseflate', lat, lon).catch(() => undefined),
+      nguFlate('muligmarinleire', 'muligmarinleireflate', lat, lon).catch(() => undefined),
+    ]);
+    let html = '';
+    if (radon) {
+      const grad = radon.radonAktsomhetGrad || '';
+      const type = /høy|sær/i.test(grad) ? 'fare' : /moderat/i.test(grad) ? 'obs' : 'ok';
+      html += rad('Radon', merke(grad ? `Aktsomhet: ${grad}` : 'Se kart', grad ? type : 'ukjent'));
+    } else html += rad('Radon', merke(radon === undefined ? 'Ingen svar' : 'Ikke kartlagt her', 'ukjent'));
+    const los = losLokal || losRegional;
+    if (los) html += rad('Løsmasser', esc(los.løsmassetypeNavn || 'Se kart') + (los.egnetMålestokk ? ` <small>(kart 1:${los.egnetMålestokk.toLocaleString('no-NO')})</small>` : ''));
+    else html += rad('Løsmasser', merke(los === undefined ? 'Ingen svar' : 'Ikke kartlagt her', 'ukjent'));
+    if (marin) html += rad('Marin leire', merke('Mulig marin leire', 'obs') + (marin.beskrivelse ? `<br><small>${esc(marin.beskrivelse)}</small>` : ''));
+    else if (marin === null) html += rad('Marin leire', merke('Ikke registrert', 'ok'));
+    fyll('k-grunn', html);
+  } catch (e) { feil('k-grunn', e); }
+}
+
+async function hentStoy(lat, lon) {
+  try {
+    const d = await hentJson(gfiUrl('https://www.vegvesen.no/kart/ogc/norstoy_1_0/ows', 'Stoyvarselkart', lat, lon, 'application/json'));
+    // Ta bare med soner som faktisk dekker punktet
+    const pkt = L.latLng(lat, lon);
+    const inne = (d.features || []).filter(f => {
+      try { return L.geoJSON(f).getBounds().contains(pkt) && punktIPolygon([lon, lat], f.geometry); } catch (_) { return false; }
+    });
+    if (!inne.length) { fyll('k-stoy', rad('Vegstøy', merke('Utenfor støysone', 'ok'))); return; }
+    // Rød sone er verst, så den vises først
+    const soner = inne.map(f => f.properties || {}).sort((a, b) => (b.STØYSONEKATEGORI === 'R') - (a.STØYSONEKATEGORI === 'R'));
+    const p = soner[0];
+    const sone = { R: 'Rød støysone', G: 'Gul støysone' }[p.STØYSONEKATEGORI] || 'Innenfor støysone';
+    fyll('k-stoy', rad('Vegstøy', merke(sone, p.STØYSONEKATEGORI === 'R' ? 'fare' : 'obs')) +
+      (p.STØYKILDENAVN ? rad('Kilde', esc(p.STØYKILDENAVN)) : '') +
+      (p.BEREGNETÅR ? rad('Beregnet for år', esc(p.BEREGNETÅR)) : '') +
+      `<div style="margin-top:6px"><small>Gul og rød sone etter retningslinje T-1442. Ved bolig i gul sone må støy utredes.</small></div>`);
+  } catch (e) { feil('k-stoy', e); }
+}
+function punktIPolygon(pt, geom) {
+  const polys = geom.type === 'Polygon' ? [geom.coordinates] : geom.type === 'MultiPolygon' ? geom.coordinates : [];
+  return polys.some(poly => {
+    const inn = ring => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i], [xj, yj] = ring[j];
+      if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi) c = !c; } return c; };
+    return inn(poly[0]) && !poly.slice(1).some(inn);
+  });
+}
+
+async function hentKultur(lat, lon) {
+  try {
+    // 101 piksler over 500 m gir ca. 10 m per piksel, så treff innen ca. 30 m
+    const t = await hentTekst(gfiUrl('https://kart.ra.no/wms/kulturminner2', 'Kulturminner', lat, lon, 'text/plain', 250).replace('feature_count=10', 'feature_count=20'));
+    const sett = new Set();
+    const funn = lesMapserverTekst(t).filter(f => f.navn && !sett.has(f.lokalid) && sett.add(f.lokalid));
+    if (!funn.length) { fyll('k-kultur', rad('Innen ca. 30 m', merke('Ingen registrerte kulturminner', 'ok'))); return; }
+    fyll('k-kultur', funn.slice(0, 8).map(f => {
+      const vern = f.vernetype || '';
+      const art = f.lokalitetsart || f.enkeltminneart || '';
+      const lenke = f.linkkulturminnesok ? ` · <a target="_blank" rel="noopener" href="${esc(f.linkkulturminnesok)}">Kulturminnesøk</a>` : '';
+      return rad(f.navn, merke(vern || 'Registrert', /fredet|automatisk/i.test(vern) ? 'fare' : 'obs') +
+        (art ? `<br><small>${esc(art)}${f.datering ? ' · ' + esc(f.datering) : ''}</small>` : '') + lenke);
+    }).join('') + `<div style="margin-top:6px"><small>Treff innen ca. 30 m. Automatisk fredete kulturminner har sikringssone på 5 m.</small></div>`);
+  } catch (e) { feil('k-kultur', e); }
+}
+
+async function hentPlan(lat, lon) {
+  try {
+    // Planområder med varslet oppstart innen ca. 500 m
+    const dLat = 500 / 111320, dLon = 500 / (111320 * Math.cos(lat * Math.PI / 180));
+    const u = `https://plandata.ft.dibk.no/services/rest/planleggingigangsatt/collections/planomrade/items?f=json&limit=50&bbox=${lon - dLon},${lat - dLat},${lon + dLon},${lat + dLat}`;
+    const g = await hentJson(u);
+    const pkt = [lon, lat];
+    const feats = g.features || [];
+    const inne = feats.filter(f => f.geometry && punktIPolygon(pkt, f.geometry));
+    const naer = feats.filter(f => !inne.includes(f));
+    feats.forEach(f => L.geoJSON(f, { style: { color: '#7b3fa0', weight: 2, dashArray: '5 4', fillOpacity: 0.05 } })
+      .bindTooltip(f.properties?.plannavn || 'Varslet plan').addTo(teigLag));
+    let html = '';
+    const beskriv = f => { const p = f.properties || {}; const id = p.nasjonalArealplanId?.planid;
+      return `${esc(p.plannavn || 'Plan')}` + (id ? ` <small>(planID ${esc(id)})</small>` : '') +
+      `<br><small>${esc(p.plantype || '')}` + (p.kunngjøringsdatoVarselOmPlanoppstart ? ` · varslet ${esc(p.kunngjøringsdatoVarselOmPlanoppstart)}` : '') + '</small>'; };
+    html += rad('Varslet oppstart her', inne.length ? inne.map(f => merke('Ja', 'obs') + ' ' + beskriv(f)).join('<br>') : merke('Ingen', 'ok'));
+    if (naer.length) html += rad('Varslet innen ca. 500 m', naer.slice(0, 8).map(beskriv).join('<br>'));
+    fyll('k-plan', html);
+  } catch (e) { feil('k-plan', e); }
+}
+
+function lagLenker(lat, lon, e) {
+  const z = 17;
+  const l = [
+    e && [`https://seeiendom.kartverket.no/eiendom/${e.kommunenummer}/${e.gardsnummer}/${e.bruksnummer}/${e.festenummer}/${e.seksjonsnummer}`, 'Seeiendom (Kartverket) – bygninger, adresser, grunnbok-bestilling'],
+    [`https://norgeskart.no/#!?project=norgeskart&layers=1002&zoom=${z}&lat=${lat}&lon=${lon}&markerLat=${lat}&markerLon=${lon}&sok=`, 'Norgeskart'],
+    [`https://atlas.nve.no/html5Viewer/?viewer=nveatlas&center=${lon},${lat},4326&scale=5000`, 'NVE Atlas – flom og skred'],
+    [`https://geo.ngu.no/kart/radon_mobil/?lang=nor`, 'NGU radonkart'],
+    [`https://www.kulturminnesok.no/kart/?lat=${lat}&lng=${lon}&zoom=${z}`, 'Kulturminnesøk'],
+  ].filter(Boolean);
+  fyll('k-lenker', `<div class="lenker">${l.map(([u, t]) => `<a target="_blank" rel="noopener" href="${u}">${esc(t)}</a>`).join('')}</div>`);
+}
+</script>
+</body>
+</html>
