@@ -105,6 +105,9 @@ const kartlag = {
   'Løsmasser (NGU)': wms('https://geo.ngu.no/mapserver/LosmasserWMS2', 'Losmasse_flate', 'NGU'),
   'Kulturminner (Riksantikvaren)': wms('https://kart.ra.no/wms/kulturminner2', 'Kulturminner', 'Riksantikvaren'),
   'Støy veg (Statens vegvesen)': wms('https://www.vegvesen.no/kart/ogc/norstoy_1_0/ows', 'Stoyvarselkart', 'Statens vegvesen'),
+  'Kraftledninger og trafostasjoner (NVE)': wms('https://kart.nve.no/enterprise/services/Nettanlegg5/MapServer/WMSServer', 'Transmisjonsnett_luftledning,Regionalnett_luftledning,Sjokabler,Transformatorstasjoner', 'NVE'),
+  'Byggeforbudssoner kraftledning (Statnett)': wms('https://wms.geonorge.no/skwms1/wms.byggeforbudssoner', 'byggeforbudssoner', 'Statnett'),
+  'Avløpsanlegg og utslipp (Miljødirektoratet)': wms('https://kart3.miljodirektoratet.no/arcgis/services/avloep/MapServer/WMSServer', 'avloepsanlegg,utslippspunkt', 'Miljødirektoratet'),
 };
 // ---------- Fradelingstomter ----------
 const TOMTEKAT = {
@@ -282,13 +285,14 @@ async function slaOpp(lat, lon, adresse) {
     ${kort('k-grunn', 'Grunnforhold og radon', 'NGU')}
     ${kort('k-stoy', 'Støy fra veg', 'Statens vegvesen (støyvarselkart)')}
     ${kort('k-kultur', 'Kulturminner', 'Riksantikvaren (Askeladden)')}
+    ${kort('k-ledning', 'Ledninger og nett', 'NVE (kraftnett), Statnett (byggeforbudssoner)')}
     ${kort('k-plan', 'Planer under arbeid', 'DiBK (planlegging igangsatt)')}
     ${kort('k-lenker', 'Mer informasjon', 'lenker til offentlige innsynsløsninger')}
     <p class="forbehold">Tallene er hentet automatisk fra åpne kilder og kan være utdaterte eller unøyaktige.
     Areal er regnet ut fra eiendomsgrensen i kartet og er ca. Bruk alltid kommunens planinnsyn og
     grunnboken før beslutninger. Eiere og tidligere salg er ikke med, fordi grunnboken ikke er åpen uten avtale.</p>`;
 
-  const oppg = [hentEiendom(lat, lon, adresse), hentArealplaner(lat, lon), hentNve(lat, lon), hentGrunn(lat, lon), hentStoy(lat, lon), hentKultur(lat, lon), hentPlan(lat, lon)];
+  const oppg = [hentEiendom(lat, lon, adresse), hentArealplaner(lat, lon), hentNve(lat, lon), hentGrunn(lat, lon), hentStoy(lat, lon), hentKultur(lat, lon), hentLedning(lat, lon), hentPlan(lat, lon)];
   await Promise.allSettled(oppg);
 }
 
@@ -550,6 +554,38 @@ async function hentKultur(lat, lon) {
   } catch (e) { feil('k-kultur', e); }
 }
 
+// Kraftnett innen ca. 100 m (NVE) og byggeforbudssone (Statnett).
+// Vann, avløp, fiber og det lokale strømnettet er ikke åpne data.
+async function hentLedning(lat, lon) {
+  try {
+    // 400 piksler over ca. 400 m gir ca. 1 m per piksel, så toleranse 100 gir ca. 100 m
+    const dLat = 200 / 111320, dLon = 200 / (111320 * Math.cos(lat * Math.PI / 180));
+    const p = new URLSearchParams({ geometry: `${lon},${lat}`, geometryType: 'esriGeometryPoint', sr: 4326, layers: 'all', tolerance: 100,
+      mapExtent: `${lon - dLon},${lat - dLat},${lon + dLon},${lat + dLat}`, imageDisplay: '400,400,96', returnGeometry: false, f: 'json' });
+    const [nett, forbudT] = await Promise.all([
+      hentJson('https://kart.nve.no/enterprise/rest/services/Nettanlegg5/MapServer/identify?' + p).then(d => d.results || []).catch(() => null),
+      hentTekst(gfiUrl('https://wms.geonorge.no/skwms1/wms.byggeforbudssoner', 'byggeforbudssoner', lat, lon, 'text/plain', 15)).catch(() => null),
+    ]);
+    let html = '';
+    if (forbudT === null) html += rad('Byggeforbudssone', merke('Ingen svar', 'ukjent'));
+    else html += rad('Byggeforbudssone', lesMapserverTekst(forbudT).length ? merke('Tomta ligger i byggeforbudssone', 'fare') : merke('Nei', 'ok'));
+    if (nett === null) html += rad('Kraftnett innen ca. 100 m', merke('Ingen svar', 'ukjent'));
+    else if (!nett.length) html += rad('Kraftnett innen ca. 100 m', merke('Ingen store kraftledninger', 'ok'));
+    else {
+      const sett = new Set();
+      const v = x => (x && x !== 'Null' ? x : '');
+      html += rad('Kraftnett innen ca. 100 m', nett.filter(r => !sett.has(r.attributes.globalID) && sett.add(r.attributes.globalID)).slice(0, 6).map(r => {
+        const a = r.attributes;
+        const kv = v(a.spenning_kV) ? `${String(a.spenning_kV).replace(/\.0+$/, '')} kV` : '';
+        return merke(v(a.objektType) || r.layerName, 'obs') + ` <small>${esc([kv, v(a.nveNettnivaa), v(a.navn || a.Navn), v(a.drifter)].filter(Boolean).join(' · '))}</small>`;
+      }).join('<br>'));
+    }
+    html += rad('Vann, avløp og fiber', '<small>Ikke åpne data. Bestill påvisning av kabler og rør i ' +
+      '<a target="_blank" rel="noopener" href="https://ledningsportalen.no/">Ledningsportalen</a>, eller spør kommunen om VA-kart.</small>');
+    fyll('k-ledning', html + `<div style="margin-top:6px"><small>Bare transmisjons- og regionalnettet er åpent. Lokale strømkabler vises ikke.</small></div>`);
+  } catch (e) { feil('k-ledning', e); }
+}
+
 async function hentPlan(lat, lon) {
   try {
     // Planområder med varslet oppstart innen ca. 500 m
@@ -580,6 +616,7 @@ function lagLenker(lat, lon, e) {
     [`https://atlas.nve.no/html5Viewer/?viewer=nveatlas&center=${lon},${lat},4326&scale=5000`, 'NVE Atlas – flom og skred'],
     [`https://geo.ngu.no/kart/radon_mobil/?lang=nor`, 'NGU radonkart'],
     [`https://www.kulturminnesok.no/kart/?lat=${lat}&lng=${lon}&zoom=${z}`, 'Kulturminnesøk'],
+    ['https://ledningsportalen.no/', 'Ledningsportalen – påvisning av kabler og rør før graving'],
   ].filter(Boolean);
   fyll('k-lenker', `<div class="lenker">${l.map(([u, t]) => `<a target="_blank" rel="noopener" href="${u}">${esc(t)}</a>`).join('')}</div>`);
 }
