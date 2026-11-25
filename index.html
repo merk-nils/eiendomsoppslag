@@ -2,9 +2,17 @@
 <html lang="no">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>MERK eiendomsoppslag</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#121212">
+<link rel="icon" type="image/png" href="ikon/favicon-32.png">
+<link rel="apple-touch-icon" href="ikon/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Eiendom">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -12,7 +20,9 @@
   :root { --rod:#ea4f3d; --svart:#121212; --gra:#f8f8f8; --linje:#e3e3e3; --dempet:#666; --ok:#2e7d32; --obs:#c77700; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:Poppins, system-ui, sans-serif; color:var(--svart); background:var(--gra); font-size:14px; }
-  header { background:var(--svart); color:#fff; padding:12px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header { background:var(--svart); color:#fff; padding:12px 16px; padding-top:max(12px, env(safe-area-inset-top)); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  #installer { background:var(--rod); color:#fff; border:0; font-weight:500; }
+  #installer:hover { background:#c93d2d; }
   header h1 { font-size:17px; margin:0; font-weight:600; }
   header h1 span { color:var(--rod); }
   .sok { position:relative; flex:1; min-width:260px; max-width:560px; }
@@ -57,7 +67,7 @@
     #rapport { border-left:0; }
   }
   @media print {
-    header .sok, header .hint, #kart, .knapper { display:none; }
+    header .sok, header .hint, #installer, #kart, .knapper { display:none; }
     main { display:block; height:auto; }
     #rapport { overflow:visible; }
   }
@@ -71,6 +81,7 @@
     <div id="forslag" class="forslag" hidden></div>
   </div>
   <div class="hint">… eller klikk i kartet</div>
+  <button id="installer" hidden>Installer app</button>
 </header>
 <main>
   <div id="kart"></div>
@@ -620,6 +631,25 @@ function lagLenker(lat, lon, e) {
   ].filter(Boolean);
   fyll('k-lenker', `<div class="lenker">${l.map(([u, t]) => `<a target="_blank" rel="noopener" href="${u}">${esc(t)}</a>`).join('')}</div>`);
 }
+
+// ---------- App (installering og offline) ----------
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+let installValg = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  installValg = e;
+  $('#installer').hidden = false;
+});
+$('#installer').addEventListener('click', async () => {
+  if (!installValg) return;
+  installValg.prompt();
+  await installValg.userChoice;
+  installValg = null;
+  $('#installer').hidden = true;
+});
+window.addEventListener('appinstalled', () => { $('#installer').hidden = true; });
 </script>
 </body>
 </html>

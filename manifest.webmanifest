@@ -1,0 +1,16 @@
+{
+  "name": "MERK eiendomsoppslag",
+  "short_name": "Eiendom",
+  "description": "Eiendom, arealplaner, naturfare, støy, kulturminner, ledninger og fradelingstomter i Møre og Romsdal.",
+  "lang": "no",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f8f8f8",
+  "theme_color": "#121212",
+  "icons": [
+    { "src": "ikon/ikon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "ikon/ikon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "ikon/ikon-512-maskerbar.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
