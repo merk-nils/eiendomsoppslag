@@ -1,6 +1,6 @@
 {
-  "name": "MERK eiendomsoppslag",
-  "short_name": "Eiendom",
+  "name": "Eiendomssøk",
+  "short_name": "Eiendomssøk",
   "description": "Eiendom, arealplaner, naturfare, støy, kulturminner, ledninger og fradelingstomter i Møre og Romsdal.",
   "lang": "no",
   "start_url": "./",

@@ -1,6 +1,6 @@
 // Service worker for appen: henter alltid nyeste utgave av siden når det er nett,
 // og bruker lagret utgave bare når det ikke er nett. Kart og oppslag krever nett.
-const LAGER = 'eiendomsoppslag-v1';
+const LAGER = 'eiendomsoppslag-v2';
 const SKALL = [
   './', './index.html', './fradelingstomter.js', './manifest.webmanifest',
   './ikon/ikon-192.png', './ikon/ikon-512.png', './ikon/apple-touch-icon.png', './ikon/favicon-32.png',
